@@ -1,0 +1,643 @@
+import os, zipfile, textwrap
+
+base = "/mnt/data/blue-horizon"
+os.makedirs(base, exist_ok=True)
+
+files = {}
+
+files["index.html"] = r'''<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101c43">
+  <title>Blue Horizon — بازی سرعتی دوبعدی</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">BH</span>
+        <div>
+          <h1>BLUE HORIZON</h1>
+          <p>یک ماجراجویی سرعتی دوبعدی</p>
+        </div>
+      </div>
+      <button id="soundButton" class="small-button" type="button" aria-pressed="true">🔊 صدا روشن</button>
+    </header>
+
+    <section class="game-frame" aria-label="بازی">
+      <canvas id="game" width="960" height="540" aria-label="محیط بازی"></canvas>
+      <div id="overlay" class="overlay">
+        <div class="panel">
+          <div class="eyebrow">ARCADE PLATFORMER</div>
+          <h2 id="overlayTitle">آماده‌ای برای سرعت؟</h2>
+          <p id="overlayText">حلقه‌ها را جمع کن، از ربات‌ها بپر و به دروازهٔ پایان برس.</p>
+          <button id="startButton" class="primary-button" type="button">شروع بازی</button>
+          <p class="hint">حرکت: ← → یا A / D &nbsp; • &nbsp; پرش: Space / ↑ / W</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="hud" aria-label="وضعیت بازی">
+      <div class="stat"><span class="stat-label">امتیاز</span><strong id="score">000000</strong></div>
+      <div class="stat"><span class="stat-label">حلقه‌ها</span><strong id="rings">00</strong></div>
+      <div class="stat"><span class="stat-label">جان</span><strong id="lives">3</strong></div>
+      <div class="stat"><span class="stat-label">مرحله</span><strong id="zone">۱ / ۳</strong></div>
+    </section>
+
+    <section class="below">
+      <div class="info-card">
+        <h3>کنترل‌ها</h3>
+        <p><kbd>←</kbd> <kbd>→</kbd> یا <kbd>A</kbd> <kbd>D</kbd> حرکت؛ <kbd>Space</kbd> پرش؛ <kbd>Esc</kbd> توقف؛ <kbd>R</kbd> شروع دوباره.</p>
+      </div>
+      <div class="info-card">
+        <h3>نکته</h3>
+        <p>سرعت بگیر تا از فاصله‌های بلندتر بپری. برخورد از بالا ربات‌ها را از بین می‌برد؛ برخورد از کنار حلقه‌هایت را کم می‌کند.</p>
+      </div>
+    </section>
+    <footer>ساخته‌شده با HTML Canvas و JavaScript خالص · دارایی‌های گرافیکی و صوتی اختصاصی این پروژه</footer>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
+'''
+
+files["style.css"] = r'''@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+  color-scheme: dark;
+  --bg: #0a1027;
+  --panel: #121d42;
+  --line: rgba(169, 202, 255, .18);
+  --text: #eef6ff;
+  --muted: #a7b8db;
+  --cyan: #54e4f2;
+  --blue: #4e79ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(40, 100, 220, .28), transparent 45%),
+    radial-gradient(ellipse at 90% 40%, rgba(27, 194, 205, .12), transparent 35%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Vazirmatn", Tahoma, sans-serif;
+}
+button { font: inherit; cursor: pointer; }
+.shell { width: min(1120px, calc(100% - 28px)); margin: 24px auto 32px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.brand { display: flex; align-items: center; gap: 13px; }
+.brand-mark {
+  display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px;
+  color: #06142d; font-weight: 900; font-size: 18px; letter-spacing: -2px;
+  background: linear-gradient(135deg, var(--cyan), #7da2ff);
+  box-shadow: 0 8px 28px rgba(64, 195, 255, .2);
+}
+h1 { font-size: clamp(18px, 3vw, 25px); letter-spacing: 1.4px; margin: 0; }
+.brand p { color: var(--muted); margin: 2px 0 0; font-size: 13px; }
+.small-button, .primary-button {
+  border: 1px solid var(--line); border-radius: 12px; color: var(--text);
+  background: rgba(255,255,255,.06); padding: 10px 14px;
+}
+.small-button:hover { background: rgba(255,255,255,.12); }
+.game-frame {
+  position: relative; overflow: hidden; border: 1px solid rgba(153, 206, 255, .25);
+  border-radius: 18px; background: #61c7f7;
+  box-shadow: 0 24px 80px rgba(0,0,0,.35), 0 0 0 5px rgba(255,255,255,.02);
+}
+canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.overlay {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 20px;
+  background: linear-gradient(90deg, rgba(5,14,39,.18), rgba(5,14,39,.64));
+}
+.overlay.hidden { display: none; }
+.panel {
+  width: min(490px, 100%); padding: clamp(22px, 5vw, 38px); border-radius: 22px;
+  background: rgba(8, 18, 48, .86); border: 1px solid rgba(186, 222, 255, .28);
+  box-shadow: 0 18px 70px rgba(0,0,0,.28); backdrop-filter: blur(12px); text-align: center;
+}
+.eyebrow { color: var(--cyan); font-size: 11px; font-weight: 800; letter-spacing: 2px; }
+.panel h2 { margin: 10px 0; font-size: clamp(22px, 4vw, 34px); }
+.panel p { color: #c3d2f0; line-height: 1.9; margin: 0 0 18px; }
+.primary-button {
+  border: 0; color: #07162c; font-weight: 900; padding: 12px 28px;
+  background: linear-gradient(135deg, #62f2e5, #7ba2ff);
+  box-shadow: 0 8px 28px rgba(78, 191, 255, .2);
+}
+.primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.panel .hint { font-size: 12px; margin: 18px 0 0; color: #9eb2d8; }
+.hud { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 13px 0; }
+.stat, .info-card {
+  border: 1px solid var(--line); background: rgba(18, 29, 66, .76); border-radius: 14px;
+}
+.stat { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.stat-label { color: var(--muted); font-size: 13px; }
+.stat strong { font-variant-numeric: tabular-nums; font-size: 18px; color: var(--cyan); }
+.below { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.info-card { padding: 14px 17px; }
+.info-card h3 { margin: 0 0 5px; font-size: 14px; }
+.info-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.9; }
+kbd { display: inline-block; padding: 1px 6px; margin: 0 1px; border: 1px solid #4d6290; border-radius: 5px; color: #e7f3ff; background: #1c2b55; font-size: 12px; }
+footer { color: #778ab3; font-size: 12px; text-align: center; padding: 20px 0 0; }
+@media (max-width: 650px) {
+  .shell { width: min(100% - 16px, 1120px); margin-top: 12px; }
+  .topbar { align-items: flex-start; }
+  .brand-mark { width: 42px; height: 42px; border-radius: 12px; }
+  .small-button { padding: 8px 10px; font-size: 12px; }
+  .hud { grid-template-columns: repeat(2, 1fr); }
+  .below { grid-template-columns: 1fr; }
+  .stat { padding: 9px 12px; }
+}
+'''
+
+files["game.js"] = r'''(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const overlay = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlayTitle");
+  const overlayText = document.getElementById("overlayText");
+  const startButton = document.getElementById("startButton");
+  const soundButton = document.getElementById("soundButton");
+  const ui = {
+    score: document.getElementById("score"),
+    rings: document.getElementById("rings"),
+    lives: document.getElementById("lives"),
+    zone: document.getElementById("zone")
+  };
+
+  const W = canvas.width, H = canvas.height;
+  const keys = new Set();
+  let audioCtx = null, soundOn = true;
+  let state = "title", lastTime = 0, cameraX = 0, score = 0, lives = 3;
+  let stageIndex = 0, particles = [], floatingTexts = [], checkpointX = 70;
+  const GRAVITY = 1900;
+  const stages = [
+    { name: "Emerald Coast", sky: ["#65d7ff", "#d9fbff"], far: "#8ee3b5", near: "#39bd82",
+      length: 3600, ground: 438, accent: "#ffc928" },
+    { name: "Sunset Ruins", sky: ["#fca36a", "#ffe6aa"], far: "#d88d80", near: "#a65b65",
+      length: 4000, ground: 438, accent: "#fff06a" },
+    { name: "Crystal Heights", sky: ["#5f93ed", "#d7f5ff"], far: "#b4c6f5", near: "#6389d5",
+      length: 4300, ground: 438, accent: "#7df5f0" }
+  ];
+
+  const player = {
+    x: 70, y: 300, w: 30, h: 38, vx: 0, vy: 0,
+    grounded: false, facing: 1, rings: 0, invulnerable: 0,
+    spin: false, anim: 0
+  };
+
+  let platforms = [], rings = [], enemies = [], springs = [], checkpoints = [], goalX = 0;
+
+  function tone(freq = 440, duration = .08, type = "square", volume = .035) {
+    if (!soundOn) return;
+    try {
+      audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = type; osc.frequency.value = freq; gain.gain.value = volume;
+      gain.gain.setTargetAtTime(.0001, audioCtx.currentTime + duration * .65, duration * .3);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + duration);
+    } catch (_) {}
+  }
+  function sfx(name) {
+    if (name === "ring") { tone(880,.055,"sine"); setTimeout(() => tone(1320,.06,"sine",.025),35); }
+    if (name === "jump") tone(280,.13,"square",.025);
+    if (name === "spring") { tone(320,.08,"square"); setTimeout(() => tone(640,.12,"square"),50); }
+    if (name === "hit") tone(150,.2,"sawtooth",.03);
+    if (name === "enemy") { tone(500,.07); setTimeout(() => tone(760,.09),45); }
+    if (name === "goal") { [523,659,784,1046].forEach((f,i) => setTimeout(()=>tone(f,.15,"sine"),i*110)); }
+  }
+
+  function platform(x,y,w,h=18) { return {x,y,w,h}; }
+  function makeStage(index) {
+    stageIndex = index;
+    const stage = stages[index];
+    platforms = []; rings = []; enemies = []; springs = []; checkpoints = [];
+    const gaps = index === 0 ? [[640,760],[1230,1370],[1960,2110],[2770,2910]]
+      : index === 1 ? [[530,660],[1080,1230],[1830,1990],[2630,2790],[3330,3470]]
+      : [[700,830],[1450,1600],[2200,2380],[3000,3180],[3700,3840]];
+    let groundSegments = [];
+    let cursor = 0;
+    for (const [a,b] of gaps) {
+      if (a > cursor) groundSegments.push({x:cursor,w:a-cursor});
+      cursor = b;
+    }
+    if (cursor < stage.length) groundSegments.push({x:cursor,w:stage.length-cursor});
+    stage.groundSegments = groundSegments;
+
+    const elevated = index === 0
+      ? [[300,350,150],[500,290,100],[840,340,180],[1010,280,140],[1410,340,190],[1660,300,160],[2130,330,180],[2370,270,150],[2950,340,180],[3210,295,180]]
+      : index === 1
+      ? [[260,340,160],[440,285,120],[710,330,180],[930,270,140],[1290,340,180],[1510,285,170],[2010,325,190],[2270,270,150],[2820,335,170],[3060,285,180],[3500,330,180]]
+      : [[320,340,160],[520,280,150],[880,330,190],[1120,260,150],[1620,330,170],[1850,275,180],[2400,330,180],[2630,260,170],[3200,330,180],[3420,275,170],[3900,330,170]];
+    elevated.forEach(([x,y,w]) => platforms.push(platform(x,y,w)));
+
+    // Collectible ring arcs and lines
+    for (let x=150; x<stage.length-120; x+=68) {
+      const inGap = gaps.some(([a,b]) => x>a-20 && x<b+20);
+      if (!inGap) rings.push({x, y:stage.ground-70-Math.sin(x*.012)*18, r:10, taken:false});
+    }
+    elevated.forEach(([x,y,w], i) => {
+      for (let n=0;n<Math.floor(w/28);n++) rings.push({x:x+14+n*28,y:y-28-(i%2)*7,r:10,taken:false});
+    });
+    gaps.forEach(([a,b]) => {
+      for(let n=0;n<5;n++) rings.push({x:a+18+n*((b-a-36)/4),y:stage.ground-100,r:10,taken:false});
+    });
+
+    for(let x=450; x<stage.length-220; x+=index===0?430:390) {
+      if (!gaps.some(([a,b])=>x>a-30&&x<b+30))
+        enemies.push({x,y:stage.ground-34,w:32,h:30,alive:true,origin:x,dir:1,range:70});
+    }
+    springs = [520, 1170, 1880, 2670, 3150].filter(x=>x<stage.length-100 && !gaps.some(([a,b])=>x>a-20&&x<b+20))
+      .map((x,i)=>({x,y:stage.ground-18,w:28,h:18,used:false}));
+    checkpoints = [1000, 2200, 3100].filter(x=>x<stage.length-250).map(x=>({x,active:false}));
+    goalX = stage.length - 100;
+    player.x = 70; player.y = 250; player.vx = player.vy = 0;
+    player.grounded = false; player.rings = 0; player.invulnerable = 0;
+    cameraX = 0; checkpointX = 70;
+    updateHud();
+  }
+
+  function startGame() {
+    score = 0; lives = 3; particles = []; floatingTexts = [];
+    makeStage(0); state = "playing"; overlay.classList.add("hidden");
+    tone(600,.08,"sine");
+  }
+  function showOverlay(title, text, buttonText="ادامه") {
+    overlayTitle.textContent = title; overlayText.textContent = text;
+    startButton.textContent = buttonText; overlay.classList.remove("hidden");
+  }
+  function updateHud() {
+    ui.score.textContent = String(score).padStart(6,"0");
+    ui.rings.textContent = String(player.rings).padStart(2,"0");
+    ui.lives.textContent = String(lives);
+    ui.zone.textContent = `${["۱","۲","۳"][stageIndex]} / ۳`;
+  }
+
+  function rectsOverlap(a,b) {
+    return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+  }
+  function burst(x,y,color,count=10) {
+    for(let i=0;i<count;i++) {
+      const a=Math.random()*Math.PI*2, speed=60+Math.random()*220;
+      particles.push({x,y,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed-50,life:.45+Math.random()*.4,color,size:2+Math.random()*4});
+    }
+  }
+  function popText(x,y,text,color="#fff") { floatingTexts.push({x,y,text,color,life:1}); }
+
+  function hurt() {
+    if (player.invulnerable>0) return;
+    sfx("hit");
+    if (player.rings>0) {
+      const lost=Math.min(player.rings,Math.max(1,Math.ceil(player.rings/2)));
+      player.rings-=lost;
+      for(let i=0;i<Math.min(lost,12);i++) {
+        const a=(Math.PI*2*i)/Math.min(lost,12);
+        particles.push({x:player.x+15,y:player.y+16,vx:Math.cos(a)*180,vy:Math.sin(a)*180-70,life:.8,color:"#ffd53d",size:7,ring:true});
+      }
+      popText(player.x,player.y-10,`-${lost} حلقه`,"#ffe06a");
+    } else {
+      lives--;
+      if(lives<=0) {
+        state="gameover"; showOverlay("پایان بازی","این بار نشد! دوباره تلاش کن و حلقه‌ها را از دست نده.","شروع دوباره"); updateHud(); return;
+      }
+      player.x=checkpointX; player.y=220; player.vx=0; player.vy=-250;
+    }
+    player.invulnerable=1.7; updateHud();
+  }
+
+  function update(dt) {
+    if(state!=="playing") return;
+    const stage=stages[stageIndex];
+    player.anim+=dt*Math.abs(player.vx)*.07;
+    player.invulnerable=Math.max(0,player.invulnerable-dt);
+
+    const left=keys.has("ArrowLeft")||keys.has("KeyA");
+    const right=keys.has("ArrowRight")||keys.has("KeyD");
+    const jump=keys.has("Space")||keys.has("ArrowUp")||keys.has("KeyW");
+    const accel=player.grounded?1900:1050, friction=player.grounded?1450:250;
+    if(left){player.vx-=accel*dt;player.facing=-1;}
+    if(right){player.vx+=accel*dt;player.facing=1;}
+    if(!left&&!right) {
+      if(player.vx>0) player.vx=Math.max(0,player.vx-friction*dt);
+      else player.vx=Math.min(0,player.vx+friction*dt);
+    }
+    player.vx=Math.max(-430,Math.min(430,player.vx));
+    if(jump && player.grounded && !player.jumpHeld) {
+      player.vy=-650; player.grounded=false; player.spin=true; sfx("jump");
+    }
+    player.jumpHeld=jump;
+    if(!jump && player.vy < -180) player.vy*=.94;
+    player.vy=Math.min(950,player.vy+GRAVITY*dt);
+
+    const prevY=player.y;
+    player.x+=player.vx*dt;
+    player.y+=player.vy*dt;
+    player.grounded=false;
+
+    // Land on solid ground segments
+    for(const g of stage.groundSegments) {
+      if(player.x+player.w>g.x && player.x<g.x+g.w &&
+         prevY+player.h<=stage.ground+5 && player.y+player.h>=stage.ground && player.vy>=0) {
+        player.y=stage.ground-player.h; player.vy=0; player.grounded=true; player.spin=false;
+      }
+    }
+    // Platforms can be landed on from above
+    for(const p of platforms) {
+      if(player.x+player.w>p.x && player.x<p.x+p.w &&
+         prevY+player.h<=p.y+5 && player.y+player.h>=p.y && player.vy>=0) {
+        player.y=p.y-player.h; player.vy=0; player.grounded=true; player.spin=false;
+      }
+    }
+
+    // Ring collection
+    for(const r of rings) {
+      if(r.taken) continue;
+      const dx=player.x+player.w/2-r.x, dy=player.y+player.h/2-r.y;
+      if(dx*dx+dy*dy<28*28) {
+        r.taken=true; player.rings++; score+=100; sfx("ring");
+        burst(r.x,r.y,"#ffe16a",4); updateHud();
+      }
+    }
+
+    // Springs
+    for(const s of springs) {
+      if(rectsOverlap(player,{x:s.x,y:s.y-8,w:s.w,h:s.h+8}) && player.vy>=0) {
+        player.y=s.y-player.h; player.vy=-900; player.grounded=false; s.used=true;
+        sfx("spring"); burst(s.x+14,s.y,"#ff6c69",8);
+      }
+    }
+
+    // Enemies
+    for(const e of enemies) {
+      if(!e.alive) continue;
+      e.x=e.origin+Math.sin(performance.now()*.0015+e.origin)*e.range;
+      if(rectsOverlap(player,e)) {
+        if(player.vy>80 && prevY+player.h<e.y+15) {
+          e.alive=false; player.vy=-390; score+=250; sfx("enemy");
+          burst(e.x+16,e.y+15,"#ff9c69",14); popText(e.x,e.y,"+250","#fff");
+        } else hurt();
+      }
+    }
+
+    // Checkpoints
+    for(const c of checkpoints) {
+      if(!c.active && player.x>c.x) {
+        c.active=true; checkpointX=c.x; score+=500; popText(c.x,stage.ground-70,"ذخیره شد","#b8fff4"); tone(700,.12,"sine");
+      }
+    }
+
+    if(player.y>H+120) hurt();
+    player.x=Math.max(0,Math.min(stage.length-player.w,player.x));
+    cameraX=Math.max(0,Math.min(stage.length-W,player.x-W*.35));
+
+    if(player.x>=goalX) {
+      score+=1000; updateHud(); sfx("goal");
+      if(stageIndex<stages.length-1) {
+        const next=stageIndex+1; makeStage(next); popText(player.x,player.y,"مرحلهٔ جدید!","#fff");
+      } else {
+        state="win"; showOverlay("قهرمان افق آبی!","هر سه منطقه را کامل کردی. امتیاز نهایی: "+score,"بازی دوباره");
+      }
+    }
+
+    for(const p of particles) { p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=500*dt;p.life-=dt; }
+    particles=particles.filter(p=>p.life>0);
+    for(const t of floatingTexts){t.y-=35*dt;t.life-=dt;}
+    floatingTexts=floatingTexts.filter(t=>t.life>0);
+    updateHud();
+  }
+
+  function roundedRect(x,y,w,h,r,color) {
+    ctx.fillStyle=color; ctx.beginPath();
+    ctx.roundRect(x,y,w,h,r); ctx.fill();
+  }
+  function drawBackground(stage) {
+    const grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,stage.sky[0]); grad.addColorStop(1,stage.sky[1]);
+    ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+
+    // Distant clouds
+    for(let i=0;i<9;i++) {
+      const x=((i*230-cameraX*.16)%(W+240)+W+240)%(W+240)-80;
+      const y=65+(i%3)*48;
+      ctx.fillStyle="rgba(255,255,255,.68)";
+      ctx.beginPath();ctx.ellipse(x,y,35,13,0,0,Math.PI*2);ctx.ellipse(x+25,y-9,25,18,0,0,Math.PI*2);ctx.ellipse(x+48,y,30,12,0,0,Math.PI*2);ctx.fill();
+    }
+    // Layered hills
+    for(let i=0;i<9;i++) {
+      const x=i*190-(cameraX*.22%190);
+      ctx.fillStyle=stage.far;ctx.beginPath();ctx.ellipse(x+70,400,120,110,0,Math.PI,Math.PI*2);ctx.fill();
+    }
+    for(let i=0;i<14;i++) {
+      const x=i*125-(cameraX*.42%125);
+      ctx.fillStyle=stage.near;ctx.beginPath();ctx.ellipse(x+50,440,85,95,0,Math.PI,Math.PI*2);ctx.fill();
+    }
+  }
+
+  function drawGround(stage) {
+    for(const g of stage.groundSegments) {
+      const x=g.x-cameraX;
+      if(x+g.w<0||x>W)continue;
+      ctx.fillStyle=stage.near;ctx.fillRect(x,stage.ground,g.w,H-stage.ground);
+      ctx.fillStyle=stage.accent;ctx.fillRect(x,stage.ground,g.w,8);
+      ctx.fillStyle="rgba(20,50,80,.25)";
+      for(let xx=x;xx<x+g.w;xx+=36) {
+        ctx.fillRect(xx,stage.ground+22,18,10);ctx.fillRect(xx+18,stage.ground+47,18,10);
+      }
+    }
+  }
+
+  function drawPlayer() {
+    const x=Math.round(player.x-cameraX), y=Math.round(player.y);
+    if(player.invulnerable>0 && Math.floor(player.invulnerable*14)%2===0)return;
+    ctx.save();ctx.translate(x+player.w/2,y+player.h/2);
+    if(player.spin || Math.abs(player.vx)>300)ctx.rotate(player.anim*2.2*player.facing);
+    if(player.facing<0)ctx.scale(-1,1);
+    // Custom blue speed creature, drawn from simple shapes
+    ctx.fillStyle="#1768e9";
+    ctx.beginPath();ctx.moveTo(-11,-15);ctx.lineTo(-24,-24);ctx.lineTo(-19,-8);ctx.lineTo(-27,-3);ctx.lineTo(-17,1);ctx.lineTo(-21,13);ctx.lineTo(-6,11);ctx.quadraticCurveTo(15,20,16,0);ctx.quadraticCurveTo(17,-16,2,-18);ctx.closePath();ctx.fill();
+    ctx.fillStyle="#f3c69a";ctx.beginPath();ctx.ellipse(5,-1,9,10,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#fff";ctx.beginPath();ctx.ellipse(5,-10,5,8,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#17213b";ctx.fillRect(6,-12,3,5);
+    ctx.fillStyle="#f5f7ff";ctx.fillRect(1,7,14,5);
+    ctx.fillStyle="#ef3f52";ctx.beginPath();ctx.ellipse(-4,16,12,5,-.1,0,Math.PI*2);ctx.ellipse(12,16,10,5,.1,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#fff";ctx.fillRect(-12,16,12,2);ctx.fillRect(5,16,12,2);
+    ctx.restore();
+  }
+
+  function drawRing(r) {
+    const x=r.x-cameraX;if(x < -20||x>W+20)return;
+    ctx.strokeStyle="#fff4a2";ctx.lineWidth=7;ctx.beginPath();ctx.ellipse(x,r.y,8,11,Math.sin(performance.now()*.004+r.x)*.25,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle="#f7ad18";ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(x,r.y,8,11,0,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle="rgba(255,255,255,.9)";ctx.fillRect(x-3,r.y-7,2,4);
+  }
+
+  function drawEnemy(e) {
+    if(!e.alive)return;const x=e.x-cameraX,y=e.y;
+    roundedRect(x,y+4,32,23,7,"#d74b54");
+    roundedRect(x+4,y,24,17,6,"#ed6c66");
+    ctx.fillStyle="#fff";ctx.fillRect(x+6,y+5,7,7);ctx.fillRect(x+19,y+5,7,7);
+    ctx.fillStyle="#19213d";ctx.fillRect(x+9,y+7,3,4);ctx.fillRect(x+22,y+7,3,4);
+    ctx.fillStyle="#343e5b";ctx.fillRect(x+2,y+25,10,5);ctx.fillRect(x+20,y+25,10,5);
+    ctx.fillStyle="#ffdf87";ctx.fillRect(x+13,y+20,6,3);
+  }
+
+  function drawSpring(s) {
+    const x=s.x-cameraX;
+    ctx.fillStyle="#ff4d69";ctx.fillRect(x,s.y+7,s.w,11);
+    ctx.fillStyle="#ffd6e0";ctx.fillRect(x+4,s.y+2,s.w-8,5);
+    ctx.fillStyle="#fff";ctx.fillRect(x+3,s.y,s.w-6,4);
+    ctx.fillStyle="#d72b52";ctx.fillRect(x,s.y+15,s.w,3);
+  }
+
+  function render() {
+    const stage=stages[stageIndex];
+    drawBackground(stage);drawGround(stage);
+    // Decorative floating blocks
+    for(const p of platforms) {
+      const x=p.x-cameraX;if(x+p.w<0||x>W)continue;
+      ctx.fillStyle=stage.near;ctx.fillRect(x,p.y,p.w,p.h);
+      ctx.fillStyle=stage.accent;ctx.fillRect(x,p.y,p.w,5);
+      ctx.fillStyle="rgba(20,40,70,.25)";ctx.fillRect(x,p.y+5,p.w,p.h-5);
+    }
+    for(const c of checkpoints) {
+      const x=c.x-cameraX;if(x<-30||x>W+30)continue;
+      ctx.fillStyle=c.active?"#62ffe0":"#fff";
+      ctx.fillRect(x,stage.ground-62,4,62);
+      ctx.fillStyle=c.active?"#22b8a6":"#4c7bff";
+      ctx.beginPath();ctx.moveTo(x+4,stage.ground-60);ctx.lineTo(x+30,stage.ground-50);ctx.lineTo(x+4,stage.ground-40);ctx.closePath();ctx.fill();
+    }
+    for(const r of rings)if(!r.taken)drawRing(r);
+    for(const s of springs)drawSpring(s);
+    for(const e of enemies)drawEnemy(e);
+    // Goal gate
+    const gx=goalX-cameraX;
+    if(gx>-40&&gx<W+40) {
+      ctx.strokeStyle="#fff";ctx.lineWidth=8;ctx.strokeRect(gx,stage.ground-100,34,100);
+      ctx.strokeStyle=stage.accent;ctx.lineWidth=4;ctx.strokeRect(gx+6,stage.ground-94,22,88);
+      ctx.fillStyle="#fff";ctx.font="bold 14px sans-serif";ctx.fillText("GO",gx-2,stage.ground-112);
+    }
+    drawPlayer();
+
+    for(const p of particles) {
+      ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.color;
+      if(p.ring){ctx.strokeStyle=p.color;ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(p.x-cameraX,p.y,p.size,p.size*1.35,0,0,Math.PI*2);ctx.stroke();}
+      else ctx.fillRect(p.x-cameraX,p.y,p.size,p.size);
+    }
+    ctx.globalAlpha=1;
+    for(const t of floatingTexts) {
+      ctx.globalAlpha=Math.min(1,t.life);ctx.fillStyle=t.color;ctx.font="bold 17px sans-serif";ctx.fillText(t.text,t.x-cameraX,t.y);
+    }
+    ctx.globalAlpha=1;
+
+    // Stage label
+    ctx.fillStyle="rgba(7,24,52,.45)";ctx.fillRect(W-220,14,204,36);
+    ctx.fillStyle="#fff";ctx.font="bold 14px sans-serif";ctx.textAlign="right";ctx.fillText(stage.name,W-28,37);ctx.textAlign="left";
+
+    if(state==="paused") {
+      ctx.fillStyle="rgba(5,12,30,.55)";ctx.fillRect(0,0,W,H);
+      ctx.fillStyle="#fff";ctx.font="bold 42px sans-serif";ctx.textAlign="center";ctx.fillText("PAUSED",W/2,H/2);ctx.textAlign="left";
+    }
+  }
+
+  function frame(now) {
+    const dt=Math.min(.033,(now-lastTime)/1000||0);lastTime=now;
+    if(state==="playing")update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  startButton.addEventListener("click",()=>{
+    if(state==="paused"){state="playing";overlay.classList.add("hidden");return;}
+    startGame();
+  });
+  soundButton.addEventListener("click",()=>{
+    soundOn=!soundOn;soundButton.textContent=soundOn?"🔊 صدا روشن":"🔇 صدا خاموش";
+    soundButton.setAttribute("aria-pressed",String(soundOn));
+    if(soundOn)tone(660,.06,"sine");
+  });
+  window.addEventListener("keydown",e=>{
+    if(["ArrowLeft","ArrowRight","ArrowUp","Space"].includes(e.code))e.preventDefault();
+    if(e.code==="Escape") {
+      if(state==="playing"){state="paused";showOverlay("بازی متوقف شد","برای ادامه، دکمهٔ زیر را بزن.","ادامه");}
+      else if(state==="paused"){state="playing";overlay.classList.add("hidden");}
+    }
+    if(e.code==="KeyR"){startGame();}
+    keys.add(e.code);
+  });
+  window.addEventListener("keyup",e=>keys.delete(e.code));
+  window.addEventListener("blur",()=>keys.clear());
+
+  makeStage(0);
+  requestAnimationFrame(frame);
+})();
+'''
+
+files["README.md"] = r'''# Blue Horizon
+
+یک بازی پلتفرمر سرعتی دوبعدی که با HTML Canvas، CSS و JavaScript خالص ساخته شده است. این پروژه از بازی‌های پلتفرمر کلاسیک الهام گرفته، اما نام، کد، شکل شخصیت، مراحل و صداهای آن اختصاصی هستند و از فایل‌های اصلی بازی‌های تجاری استفاده نمی‌کند.
+
+## اجرا
+
+1. فایل‌های این پوشه را دانلود یا کلون کنید.
+2. `index.html` را در مرورگر باز کنید.
+3. برای بهترین تجربه، از آخرین نسخهٔ Chrome، Firefox یا Edge استفاده کنید.
+
+هیچ وابستگی یا مرحلهٔ build لازم نیست. فونت فارسی در صورت اتصال اینترنت از Google Fonts بارگیری می‌شود؛ در غیر این صورت فونت جایگزین مرورگر استفاده می‌شود.
+
+## کنترل‌ها
+
+- حرکت: `←` و `→` یا `A` و `D`
+- پرش: `Space` یا `↑` یا `W`
+- توقف / ادامه: `Esc`
+- شروع دوباره: `R`
+
+## ویژگی‌ها
+
+- سه منطقهٔ متفاوت با رنگ‌بندی جداگانه
+- شتاب، اصطکاک، پرش و حرکت دوربین
+- حلقه‌های قابل جمع‌آوری و امتیاز
+- دشمن‌هایی که با پرش از بالا شکست می‌خورند
+- سکوها، فنرها، نقاط ذخیره و دروازهٔ پایان
+- جان، آسیب‌پذیری موقت، افکت ذرات و صداهای تولیدشده با Web Audio API
+- رابط فارسی و سازگار با اندازه‌های مختلف صفحه
+
+## انتشار در GitHub
+
+1. در GitHub یک repository جدید بسازید.
+2. `index.html`، `style.css`، `game.js` و `README.md` را در ریشهٔ مخزن بارگذاری کنید.
+3. برای انتشار رایگان، از بخش **Settings → Pages**، شاخهٔ `main` و پوشهٔ `/ (root)` را انتخاب و ذخیره کنید.
+4. پس از انتشار، لینک GitHub Pages در همان بخش نمایش داده می‌شود.
+
+## مجوز
+
+این پروژه به‌عنوان نمونهٔ مستقل ارائه شده است. می‌توانید آن را تغییر دهید و منتشر کنید. اگر برای پروژهٔ خود مجوز رسمی می‌خواهید، فایل LICENSE مناسبی به مخزن اضافه کنید.
+'''
+
+files[".gitignore"] = r'''# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+'''
+
+for name, content in files.items():
+    with open(os.path.join(base, name), "w", encoding="utf-8") as f:
+        f.write(content)
+
+zip_path = "/mnt/data/blue-horizon-github.zip"
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+    for name in files:
+        z.write(os.path.join(base, name), arcname=f"blue-horizon/{name}")
+
+print("Project files created:")
+for name in files:
+    print(f"- {name}")
+print(f"\nZIP: {zip_path}")
